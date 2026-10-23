@@ -1,0 +1,26 @@
+# Pipeline: run the HyperExecute Task on the source in the `shared` workspace.
+# scripts/run-pipeline.sh copies your local folder into that workspace.
+apiVersion: tekton.dev/v1
+kind: Pipeline
+metadata:
+  name: hyperexecute-pipeline
+spec:
+  params:
+    - name: hyperexecute-config
+      type: string
+      default: hyperexecute.yaml
+  workspaces:
+    - name: shared
+  results:
+    - name: job-url
+      value: $(tasks.run-tests.results.job-url)
+  tasks:
+    - name: run-tests
+      taskRef:
+        name: hyperexecute
+      params:
+        - name: config
+          value: $(params.hyperexecute-config)
+      workspaces:
+        - name: source
+          workspace: shared

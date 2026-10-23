@@ -1,0 +1,96 @@
+# Reusable Tekton Task: run any repo's HyperExecute YAML via the HyperExecute CLI.
+# One Task, many teams: each team only supplies its workspace + YAML path.
+apiVersion: tekton.dev/v1
+kind: Task
+metadata:
+  name: hyperexecute
+  labels:
+    app.kubernetes.io/version: "0.1"
+  annotations:
+    tekton.dev/displayName: "HyperExecute (TestMu AI)"
+    tekton.dev/categories: Testing
+    tekton.dev/tags: testing, selenium, hyperexecute
+spec:
+  description: >-
+    Triggers a HyperExecute job from the source workspace, streams logs,
+    and fails the TaskRun if the job fails.
+  workspaces:
+    - name: source
+      description: Repo checkout containing tests and the HyperExecute YAML.
+  params:
+    - name: config
+      type: string
+      default: hyperexecute.yaml
+      description: Path to the HyperExecute YAML, relative to the workspace root.
+    - name: credentials-secret
+      type: string
+      default: hyperexecute-credentials
+      description: Secret with keys LT_USERNAME and LT_ACCESS_KEY.
+    - name: cli-url
+      type: string
+      default: https://downloads.lambdatest.com/hyperexecute/linux/hyperexecute
+      description: >-
+        HyperExecute CLI download URL. Ignored if the image already has
+        /usr/local/bin/hyperexecute (see tekton/Containerfile).
+    - name: image
+      type: string
+      default: docker.io/library/debian:bookworm-slim
+      description: Step image. Swap for a pre-baked image (tekton/Containerfile) at scale.
+    - name: extra-args
+      type: string
+      default: "--download-artifacts"
+      description: Extra CLI flags appended to the run.
+  results:
+    - name: job-url
+      description: HyperExecute dashboard link for this run (best effort).
+    - name: exit-code
+      description: Exit code returned by the HyperExecute CLI.
+  steps:
+    - name: run-hyperexecute
+      image: $(params.image)
+      workingDir: $(workspaces.source.path)
+      env:
+        - name: LT_USERNAME
+          valueFrom:
+            secretKeyRef:
+              name: $(params.credentials-secret)
+              key: LT_USERNAME
+        - name: LT_ACCESS_KEY
+          valueFrom:
+            secretKeyRef:
+              name: $(params.credentials-secret)
+              key: LT_ACCESS_KEY
+        - name: CONFIG
+          value: $(params.config)
+        - name: CLI_URL
+          value: $(params.cli-url)
+        - name: EXTRA_ARGS
+          value: $(params.extra-args)
+      script: |
+        #!/usr/bin/env bash
+        set -uo pipefail
+
+        if [ -x /usr/local/bin/hyperexecute ]; then
+          HX=/usr/local/bin/hyperexecute
+        else
+          if ! command -v curl >/dev/null 2>&1; then
+            apt-get update -qq && apt-get install -y -qq curl ca-certificates >/dev/null
+          fi
+          echo "Downloading HyperExecute CLI from ${CLI_URL}"
+          curl -fsSL -o /tmp/hyperexecute "${CLI_URL}"
+          chmod +x /tmp/hyperexecute
+          HX=/tmp/hyperexecute
+        fi
+
+        echo "Running: hyperexecute --config ${CONFIG} ${EXTRA_ARGS}"
+        # shellcheck disable=SC2086
+        "${HX}" --user "${LT_USERNAME}" --key "${LT_ACCESS_KEY}" \
+          --config "${CONFIG}" ${EXTRA_ARGS} 2>&1 | tee /tmp/hx.log
+        rc=${PIPESTATUS[0]}
+
+        url=$(grep -Eo 'https://hyperexecute\.lambdatest\.com[^ "]*' /tmp/hx.log | tail -1)
+        printf '%s' "${url:-unknown}" > "$(results.job-url.path)"
+        printf '%s' "${rc}" > "$(results.exit-code.path)"
+
+        echo "HyperExecute CLI exited with ${rc}"
+        exit "${rc}"

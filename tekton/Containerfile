@@ -1,0 +1,10 @@
+# Pre-baked step image for scale: no per-run CLI download, pinned CLI version.
+# podman build -t <registry>/hyperexecute-cli:latest -f tekton/Containerfile .   (or: docker build ...)
+# then set the Task param  image=<registry>/hyperexecute-cli:latest
+FROM debian:bookworm-slim
+RUN apt-get update -qq \
+ && apt-get install -y -qq --no-install-recommends curl ca-certificates \
+ && curl -fsSL -o /usr/local/bin/hyperexecute \
+      https://downloads.lambdatest.com/hyperexecute/linux/hyperexecute \
+ && chmod +x /usr/local/bin/hyperexecute \
+ && rm -rf /var/lib/apt/lists/*

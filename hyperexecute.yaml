@@ -1,0 +1,38 @@
+---
+# HyperExecute job definition. The Tekton Task just points the CLI at this file.
+version: 0.1
+globalTimeout: 90
+testSuiteTimeout: 90
+testSuiteStep: 90
+
+runson: linux
+
+autosplit: true          # HyperExecute spreads discovered tests across VMs
+concurrency: 3
+
+retryOnFailure: true
+maxRetries: 1
+
+env:
+  BUILD_NAME: tekton-hyperexecute-mvp
+
+cacheKey: '{{ checksum "requirements.txt" }}'
+cacheDirectories:
+  - CacheDir
+
+pre:
+  - pip3 install -r requirements.txt --cache-dir CacheDir
+
+testDiscovery:
+  type: raw
+  mode: dynamic
+  command: grep -HnE '^def test_' tests/test_*.py | awk -F':' '{print $1"::"substr($3,5,index($3,"(")-5)}'
+
+testRunnerCommand: python3 -m pytest "$test" -v --junitxml=reports/junit-$RANDOM.xml
+
+uploadArtefacts:
+  - name: Reports
+    path:
+      - reports/**
+
+jobLabel: ["tekton", "mvp", "selenium-python"]

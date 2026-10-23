@@ -1,0 +1,7 @@
+tekton/secret.yaml
+hyperexecute
+hyperexecute.exe
+reports/
+artifacts/
+__pycache__/
+.pytest_cache/
